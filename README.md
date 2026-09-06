@@ -191,3 +191,9 @@ For development setup, testing, and contribution guidelines, see [Development Gu
 BAGEL's development was led by Jakub Lála, Ayham Al-Saffar, and Dr Stefano Angioletti-Uberti at Imperial College London.
 We thank Shanil Panara, Dr Daniele Visco, Arnav Cheruku, and Harsh Agrawal for helpful discussions.
 We also thank [Hie et al. 2022](https://doi.org/10.1101/2022.12.21.521526), whose work inspired the creation of this package.
+
+Data Science Exploration by Divyakeerthi Alasapuri
+As a prospective PhD candidate with an MSc in Data Science, I explored this repository to understand the computational pipeline and identify areas for algorithmic optimization:
+
+Optimization: Identified a TODO in energies.py regarding a slow for loop in the HydropathyEnergy.compute() method. Replaced the O(N) Python loop over residues with a vectorized pandas.groupby() and numpy operations. This leverages C-level optimizations to significantly speed up SASA and hydropathy calculations for large protein structures.
+Environment: Explored and tested entirely via Google Colab.
