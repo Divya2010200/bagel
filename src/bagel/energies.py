@@ -739,47 +739,48 @@ class HydropathyEnergy(EnergyTerm):
         # Unknown residues have already been removed above, before this SASA calculation
         atom_sasa_values = sasa(structure, probe_radius=probe_radius_water)
 
-        # Initialize containers for hydropathy indices and residue SASA values
-        residue_hydropathy_indices = []
-        normalized_residue_sasa_values = []
-
-        # Iterate over each residue in the group (or all residues if no group specified) and calculate its hydropathic value and mean SASA
-        for chain_id, res_id in zip(chain_ids, res_ids):
-            # find the indices of atoms that belong to this res_id and chain_id
-            atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
-            atom_indices = np.where(atom_mask)[0]
-
-            # Skip if residue not found (already validated above for user-specified residues)
-            if len(atom_indices) == 0:
-                continue
-
-            # Get residue name (same for all atoms in residue)
-            res_name = structure.res_name[atom_indices[0]]
-
-            # Get hydropathic value for this residue (unknown residues have been already removed)
-            residue_hydropathy_indices.append(hydropathy_index[res_name])
-
-            # Calculate total SASA for this residue by summing the SASA values of its atoms
-            # this makes more sense than averaging the SASA values, as larger residues will
-            # naturally have higher SASA and should contribute more to the energy
-            res_sasa = np.sum(atom_sasa_values[atom_indices])
-
-            max_sasa = max_theoretical_sasa_for_residues.get(res_name, max_residue_sasa)
-            if max_sasa > 0:
-                norm_res_sasa = res_sasa / max_sasa
-            else:
-                norm_res_sasa = 0.0
-            # Clamp to [0, 1] as real protein SASA can exceed theoretical per-residue maximums
-            norm_res_sasa = float(np.clip(norm_res_sasa, 0.0, 1.0))
-            normalized_residue_sasa_values.append(norm_res_sasa)
-
+        # --- Data Science Optimization ---
+        # Replaced the slow for-loop over residues with a vectorized Pandas groupby operation.
+        # This significantly speeds up calculations for large protein structures by utilizing C-level optimizations.
+        import pandas as pd
+        
+        atom_data = pd.DataFrame({
+          'chain_id': structure.chain_id,
+          'res_id': structure.res_id,
+          'res_name': structure.res_name,
+          'atom_sasa': atom_sasa_values
+        })
+        
+        # Filter atoms to only those belonging to the target residues
+        target_pairs = set(zip(chain_ids, res_ids))
+        atom_data = atom_data[atom_data.apply(lambda row: (row['chain_id'], row['res_id']) in target_pairs, axis=1)]
+        
+        if atom_data.empty:
+          return 0.0, 0.0
+            
+        # Group by residue to get total SASA and residue name
+        grouped = atom_data.groupby(['chain_id', 'res_id'], as_index=False).agg(
+          res_sasa=('atom_sasa', 'sum'),
+          res_name=('res_name', 'first')
+        )
+        
+        # Map hydropathy indices and max SASA values
+        grouped['hydropathy'] = grouped['res_name'].map(hydropathy_index)
+        grouped['max_sasa'] = grouped['res_name'].map(max_theoretical_sasa_for_residues).fillna(max_residue_sasa)
+        
+        # Vectorized normalization and clamping
+        grouped['norm_res_sasa'] = np.where(
+          grouped['max_sasa'] > 0,
+          np.clip(grouped['res_sasa'] / grouped['max_sasa'], 0.0, 1.0),0.0
+        )
+        
         # Convert to numpy arrays for efficient indexing
-        residue_hydropathy_indices_arr: npt.NDArray[np.floating[Any]] = np.array(residue_hydropathy_indices)
-        normalized_residue_sasa_values_arr: npt.NDArray[np.floating[Any]] = np.array(normalized_residue_sasa_values)
+        residue_hydropathy_indices_arr: npt.NDArray[np.floating[Any]] = grouped['hydropathy'].to_numpy(dtype=float)
+        normalized_residue_sasa_values_arr: npt.NDArray[np.floating[Any]] = grouped['norm_res_sasa'].to_numpy(dtype=float)
 
         if len(residue_hydropathy_indices_arr) == 0:
-            # if no relevant residues, return 0 energy
-            return 0.0, 0.0
+          # if no relevant residues, return 0 energy
+          return 0.0, 0.0
 
         # Compute energy based on mode
         value: float = float(np.mean(residue_hydropathy_indices_arr))
