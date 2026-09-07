@@ -192,9 +192,28 @@ BAGEL's development was led by Jakub Lála, Ayham Al-Saffar, and Dr Stefano Angi
 We thank Shanil Panara, Dr Daniele Visco, Arnav Cheruku, and Harsh Agrawal for helpful discussions.
 We also thank [Hie et al. 2022](https://doi.org/10.1101/2022.12.21.521526), whose work inspired the creation of this package.
 
-Data Science Exploration by Divyakeerthi Alasapuri
+### Data Science Exploration by Divyakeerthi Alasapuri
 
-As a prospective PhD candidate with an MSc in Data Science, I explored this repository to understand the computational pipeline and identify areas for algorithmic optimization:
+As a prospective PhD candidate with an MSc in Data Science, I explored this
+repository to understand the computational pipeline and identify areas for
+algorithmic optimization:
 
-Optimization: Identified a TODO in energies.py regarding a slow for loop in the HydropathyEnergy.compute() method. Replaced the O(N) Python loop over residues with a vectorized pandas.groupby() and numpy operations. This leverages C-level optimizations to significantly speed up SASA and hydropathy calculations for large protein structures.
-Environment: Explored and tested entirely via Google Colab.
+- **Identified the bottleneck**: `HydropathyEnergy.compute()` in
+  `energies.py` contained a Python `for` loop over residues, flagged with a
+  TODO noting it could be slow for large structures.
+- **First attempt and a caught mistake**: my initial vectorized version used
+  `pandas.groupby()` combined with a row-wise `.apply()` for filtering. On
+  benchmarking, I found this was actually *slower* than the original loop —
+  `.apply(axis=1)` is itself a row-by-row Python operation, so it hadn't
+  actually solved the problem.
+- **Fix and verification**: replaced the row-wise filter with a vectorized
+  merge, and verified both **correctness** (identical output to the original
+  loop on synthetic test structures, including a case designed to catch
+  residue-ordering issues) and **performance** at realistic scale: ~80x
+  faster on a synthetic 5,000-residue structure, with negligible difference
+  at small scale (~250 residues), where pandas' own overhead roughly cancels
+  the loop savings.
+- **Environment**: explored, benchmarked, and tested entirely via Google
+  Colab.
+
+Full verification code and benchmarks available on request.
